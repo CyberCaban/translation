@@ -1,12 +1,7 @@
-pub struct Lexem {
-    start: usize,
-    end: usize,
+pub enum Lexem {
+    Url(String),
 }
-impl Lexem {
-    pub fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
-    }
-}
+impl Lexem {}
 pub struct Lexer {
     idx: usize,
     parsed_lexems: Vec<Lexem>,
@@ -66,13 +61,16 @@ impl Lexer {
         while !chars[self.idx].is_ascii_whitespace() {
             self.idx += 1;
         }
-        self.parsed_lexems.push(Lexem::new(lexem_start, self.idx));
+        let url: String = chars[lexem_start..self.idx].iter().collect();
+        self.parsed_lexems.push(Lexem::Url(url));
     }
 
-    pub fn print_lexems(&self, contents: &str) {
+    pub fn print_lexems(&self) {
         for lexem in &self.parsed_lexems {
-            if let Some(l) = contents.get(lexem.start..lexem.end) {
-                println!("{}", l);
+            match lexem {
+                Lexem::Url(url) => {
+                    println!("Url: {:?}", url);
+                }
             }
         }
     }
