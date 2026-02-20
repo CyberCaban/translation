@@ -41,14 +41,16 @@ impl Lexer {
         }
     }
     fn parse_url(&mut self, chars: &[char]) {
-        let lexem_start = self.idx;
+        let mut url_lexem = String::new();
         for expected_char in "http".chars() {
             if expected_char != chars[self.idx] {
                 return;
             }
+            url_lexem.push(chars[self.idx]);
             self.idx += 1;
         }
         if chars[self.idx] == 's' {
+            url_lexem.push(chars[self.idx]);
             self.idx += 1;
         }
 
@@ -56,13 +58,14 @@ impl Lexer {
             if expected_char != chars[self.idx] {
                 return;
             }
+            url_lexem.push(chars[self.idx]);
             self.idx += 1;
         }
         while !chars[self.idx].is_ascii_whitespace() {
+            url_lexem.push(chars[self.idx]);
             self.idx += 1;
         }
-        let url: String = chars[lexem_start..self.idx].iter().collect();
-        self.parsed_lexems.push(Lexem::Url(url));
+        self.parsed_lexems.push(Lexem::Url(url_lexem));
     }
 
     pub fn print_lexems(&self) {
