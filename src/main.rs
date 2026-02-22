@@ -1,9 +1,6 @@
 use crate::lexer::Lexer;
 use anyhow::{Context, Result};
-use std::{
-    env::{Args, args},
-    fs::read_to_string,
-};
+use std::{env::args, fs::read_to_string};
 
 mod lexer;
 
