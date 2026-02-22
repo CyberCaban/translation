@@ -1,6 +1,7 @@
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Lexem {
     Url(String),
+    Number(f64),
 }
 impl Lexem {}
 pub struct Lexer {
@@ -35,6 +36,10 @@ impl Lexer {
                 'h' => {
                     self.parse_url(&chars);
                 }
+                // number start
+                c if c.is_ascii_digit() || c == '.' || c == '-' => {
+                    self.parse_number(&chars);
+                }
                 _ => {
                     self.idx += 1;
                 }
@@ -68,6 +73,117 @@ impl Lexer {
         }
         self.parsed_lexems.push(Lexem::Url(url_lexem));
     }
+    fn parse_number(&mut self, chars: &[char]) {
+        enum NumberState {
+            Start,
+            Sign,
+            Integer,
+            DecimalPoint,
+            Fraction,
+            Exponent,
+        }
+        let mut state = NumberState::Start;
+        let mut num: f64 = 0.0;
+        let mut sign = 1.0;
+        let mut exponent = 0;
+        let mut exponent_sign = 1;
+        let mut has_decimal = false;
+        let mut fraction_divider = 1.0;
+        while self.idx < chars.len() {
+            let c = chars[self.idx];
+            match state {
+                NumberState::Start => match c {
+                    '-' => {
+                        if sign < 0.0 {
+                            // already seen minus
+                            return;
+                        }
+                        sign = -1.0;
+                        self.idx += 1;
+                        state = NumberState::Sign;
+                    }
+                    ch if ch.is_ascii_digit() => {
+                        let digit = ch.to_digit(10).unwrap() as f64;
+                        num = num * 10.0 + digit;
+                        self.idx += 1;
+                        state = NumberState::Integer;
+                    }
+                    '.' => {
+                        self.idx += 1;
+                        state = NumberState::DecimalPoint;
+                    }
+                    _ => break,
+                },
+                NumberState::Sign => match c {
+                    ch if ch.is_ascii_digit() => {
+                        let digit = ch.to_digit(10).unwrap() as f64;
+                        num = num * 10.0 + digit;
+                        self.idx += 1;
+                        state = NumberState::Integer;
+                    }
+                    _ => break,
+                },
+                NumberState::Integer => match c {
+                    ch if ch.is_ascii_digit() => {
+                        let digit = ch.to_digit(10).unwrap() as f64;
+                        num = num * 10.0 + digit;
+                        self.idx += 1;
+                        state = NumberState::Integer;
+                    }
+                    '.' => {
+                        self.idx += 1;
+                        state = NumberState::DecimalPoint;
+                    }
+                    'e' | 'E' => {
+                        self.idx += 1;
+                        state = NumberState::Exponent;
+                    }
+                    _ => break,
+                },
+                NumberState::DecimalPoint => {
+                    if c.is_ascii_digit() {
+                        let digit = c.to_digit(10).unwrap() as f64;
+                        num = num * 10.0 + digit;
+                        self.idx += 1;
+                        state = NumberState::Fraction;
+                    } else {
+                        break;
+                    }
+                }
+                NumberState::Fraction => match c {
+                    ch if ch.is_ascii_digit() => {
+                        let digit = ch.to_digit(10).unwrap() as f64;
+                        fraction_divider *= 10.0;
+                        num += digit / fraction_divider;
+                        self.idx += 1;
+                        state = NumberState::Integer;
+                    }
+                    'e' | 'E' => {
+                        self.idx += 1;
+                        state = NumberState::Exponent;
+                    }
+                    _ => break,
+                },
+                NumberState::Exponent => match c {
+                    '-' => {
+                        exponent_sign = -1;
+                        self.idx += 1;
+                    }
+                    '+' => {
+                        self.idx += 1;
+                    }
+                    ch if c.is_ascii_digit() => {
+                        let digit = c.to_digit(10).unwrap() as i32;
+                        exponent = exponent * 10 + digit;
+                        self.idx += 1;
+                    }
+                    _ => break,
+                },
+            }
+        }
+        let result = sign * num * (10.0f64).powi(exponent_sign * exponent);
+        self.parsed_lexems.push(Lexem::Number(result));
+    }
 
     pub fn print_lexems(&self) {
         for lexem in &self.parsed_lexems {
@@ -75,6 +191,10 @@ impl Lexer {
                 Lexem::Url(url) => {
                     println!("Url: {:?}", url);
                 }
+                Lexem::Number(num) => {
+                    println!("Number: {:?}", num)
+                }
+                _ => {}
             }
         }
     }
