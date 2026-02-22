@@ -42,30 +42,39 @@ impl Lexer {
         }
     }
     fn parse_url(&mut self, chars: &[char]) {
-        let mut url_lexem = String::new();
-        for expected_char in "http".chars() {
-            if expected_char != chars[self.idx] {
-                return;
-            }
-            url_lexem.push(chars[self.idx]);
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        enum UrlState {
+            Start,
+            H,
+            HT,
+            HTT,
+            HTTP,
+            HTTPS,
+            Colon,
+            ColonSlash,
+            Done,
+        }
+        let start = self.idx;
+        let mut state = UrlState::Start;
+        while self.idx < chars.len() {
+            let ch = chars[self.idx];
+            state = match (state, ch) {
+                (UrlState::Start, 'h') => UrlState::H,
+                (UrlState::H, 't') => UrlState::HT,
+                (UrlState::HT, 't') => UrlState::HTT,
+                (UrlState::HTT, 'p') => UrlState::HTTP,
+                (UrlState::HTTP, 's') => UrlState::HTTPS,
+                (UrlState::HTTP, ':') => UrlState::Colon,
+                (UrlState::HTTPS, ':') => UrlState::Colon,
+                (UrlState::Colon, '/') => UrlState::ColonSlash,
+                (UrlState::ColonSlash, '/') => UrlState::Done,
+                (UrlState::Done, c) if c.is_ascii_whitespace() => break,
+                (UrlState::Done, _) => UrlState::Done,
+                _ => return,
+            };
             self.idx += 1;
         }
-        if chars[self.idx] == 's' {
-            url_lexem.push(chars[self.idx]);
-            self.idx += 1;
-        }
-
-        for expected_char in "://".chars() {
-            if expected_char != chars[self.idx] {
-                return;
-            }
-            url_lexem.push(chars[self.idx]);
-            self.idx += 1;
-        }
-        while self.idx < chars.len() && !chars[self.idx].is_ascii_whitespace() {
-            url_lexem.push(chars[self.idx]);
-            self.idx += 1;
-        }
+        let url_lexem = chars[start..self.idx].iter().collect();
         self.parsed_lexems.push(Lexem::Url(url_lexem));
     }
 
