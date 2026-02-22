@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq, Eq)]
 pub enum Lexem {
     Url(String),
 }
@@ -81,6 +82,8 @@ impl Lexer {
 
 #[cfg(test)]
 mod test {
+    use core::panic;
+
     use super::*;
 
     fn process(input: &str) -> Vec<Lexem> {
@@ -88,22 +91,31 @@ mod test {
         lexer.lex(input);
         lexer.parsed_lexems
     }
+
     #[test]
     fn test_simple() {
         let input = "https://example.com";
         let lexems = process(input);
         match &lexems[0] {
             Lexem::Url(url) => assert_eq!(url, input),
-            _ => assert!(false, "expected url lexem"),
+            _ => panic!("Expected url lexem"),
         }
     }
+
+    #[test]
+    fn test_empty() {
+        let input = "";
+        let lexems = process(input);
+        assert_eq!(lexems.first(), None::<&Lexem>);
+    }
+
     #[test]
     fn test_url_long() {
         let input = "https://example.com/files/download.zip";
         let lexems = process(input);
         match &lexems[0] {
             Lexem::Url(url) => assert_eq!(url, input),
-            _ => assert!(false, "Expected URL lexem"),
+            _ => panic!("Expected URL lexem"),
         }
     }
 
@@ -117,17 +129,17 @@ mod test {
 
         match &lexems[0] {
             Lexem::Url(url) => assert_eq!(url, "https://site1.com"),
-            _ => assert!(false, "Expected URL lexem"),
+            _ => panic!("Expected URL lexem"),
         }
 
         match &lexems[1] {
             Lexem::Url(url) => assert_eq!(url, "http://site2.org"),
-            _ => assert!(false, "Expected URL lexem"),
+            _ => panic!("Expected URL lexem"),
         }
 
         match &lexems[2] {
             Lexem::Url(url) => assert_eq!(url, "http://www.site3.net"),
-            _ => assert!(false, "Expected URL lexem"),
+            _ => panic!("Expected URL lexem"),
         }
     }
 }
