@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Lexem {
     Url(String),
@@ -9,6 +12,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
+    // инициализация (конструктор)
     pub fn new() -> Lexer {
         Lexer {
             idx: 0,
@@ -16,12 +20,13 @@ impl Lexer {
         }
     }
     pub fn lex(&mut self, contents: &str) {
+        // считываем из строки все символы в массив символов
         let chars: Vec<char> = contents.chars().collect();
 
         while self.idx < chars.len() {
             let mut ch = chars[self.idx];
 
-            // skip whitespaces
+            // пропуск пробельных символов
             while ch.is_ascii_whitespace() {
                 self.idx += 1;
                 if self.idx >= chars.len() {
@@ -31,10 +36,11 @@ impl Lexer {
             }
 
             match ch {
-                // url start
+                // если очередной символ 'h', то начинаем парсить url
                 'h' => {
                     self.parse_url(&chars);
                 }
+                // иначе пропускаем символ
                 _ => {
                     self.idx += 1;
                 }
@@ -42,6 +48,8 @@ impl Lexer {
         }
     }
     fn parse_url(&mut self, chars: &[char]) {
+        // объявление enum и struct внутри тела функции сделано для того, чтобы ограничить область видимости,
+        // т.е. компилятор создаст тип один раз во время компиляции
         #[derive(Debug, Clone, Copy, PartialEq)]
         enum UrlState {
             Start,
@@ -55,10 +63,15 @@ impl Lexer {
             Done,
         }
         let start = self.idx;
+        // начальное состояние
         let mut state = UrlState::Start;
         while self.idx < chars.len() {
             let ch = chars[self.idx];
+            // переходы автомата:
+            // сравниваем состояние и текущий символ, а потом присваиваем в текущее состояние
             state = match (state, ch) {
+                // шаблон сопоставления:
+                // (состояние, символ) => новое состояние
                 (UrlState::Start, 'h') => UrlState::H,
                 (UrlState::H, 't') => UrlState::HT,
                 (UrlState::HT, 't') => UrlState::HTT,
@@ -68,12 +81,17 @@ impl Lexer {
                 (UrlState::HTTPS, ':') => UrlState::Colon,
                 (UrlState::Colon, '/') => UrlState::ColonSlash,
                 (UrlState::ColonSlash, '/') => UrlState::Done,
+                // здесь происходит проверка символа на пробельный,
+                // если так, то останавливаем считывание
                 (UrlState::Done, c) if c.is_ascii_whitespace() => break,
+                // нижнее подчеркивание означает любой
                 (UrlState::Done, _) => UrlState::Done,
+                // все не подходящее под шаблон уходит в ловушку
                 _ => return,
             };
             self.idx += 1;
         }
+        // собираем строку из символов с индекса start по индекс self.idx не включая
         let url_lexem = chars[start..self.idx].iter().collect();
         self.parsed_lexems.push(Lexem::Url(url_lexem));
     }
@@ -85,70 +103,6 @@ impl Lexer {
                     println!("Url: {:?}", url);
                 }
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use core::panic;
-
-    use super::*;
-
-    fn process(input: &str) -> Vec<Lexem> {
-        let mut lexer = Lexer::new();
-        lexer.lex(input);
-        lexer.parsed_lexems
-    }
-
-    #[test]
-    fn test_simple() {
-        let input = "https://example.com";
-        let lexems = process(input);
-        match &lexems[0] {
-            Lexem::Url(url) => assert_eq!(url, input),
-            _ => panic!("Expected url lexem"),
-        }
-    }
-
-    #[test]
-    fn test_empty() {
-        let input = "";
-        let lexems = process(input);
-        assert_eq!(lexems.first(), None::<&Lexem>);
-    }
-
-    #[test]
-    fn test_url_long() {
-        let input = "https://example.com/files/download.zip";
-        let lexems = process(input);
-        match &lexems[0] {
-            Lexem::Url(url) => assert_eq!(url, input),
-            _ => panic!("Expected URL lexem"),
-        }
-    }
-
-    #[test]
-    fn test_multiple_urls() {
-        let input = " fdosn   fef   s    https://site1.com   
-        an     d http://site2.org a   n  dhtpp http:/ http://www.site3.net";
-        let lexems = process(input);
-
-        assert_eq!(lexems.len(), 3);
-
-        match &lexems[0] {
-            Lexem::Url(url) => assert_eq!(url, "https://site1.com"),
-            _ => panic!("Expected URL lexem"),
-        }
-
-        match &lexems[1] {
-            Lexem::Url(url) => assert_eq!(url, "http://site2.org"),
-            _ => panic!("Expected URL lexem"),
-        }
-
-        match &lexems[2] {
-            Lexem::Url(url) => assert_eq!(url, "http://www.site3.net"),
-            _ => panic!("Expected URL lexem"),
         }
     }
 }
