@@ -11,7 +11,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
     let filename = &args[1];
-    let contents = read_to_string(&filename).context(format!("File: {}", filename))?;
+    let contents = read_to_string(filename).context(format!("File: {}", filename))?;
     let mut lexer = Lexer::new();
     lexer.lex(&contents);
     println!("Found lexems:```");

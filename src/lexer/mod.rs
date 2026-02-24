@@ -5,9 +5,11 @@ mod tests;
 pub enum Lexem {
     Url(String),
 }
-impl Lexem {}
+// объявления структуры Lexer
 pub struct Lexer {
+    // текущий индекс считываемого символа
     idx: usize,
+    // список распознанных лексем
     parsed_lexems: Vec<Lexem>,
 }
 
@@ -36,7 +38,7 @@ impl Lexer {
             }
 
             match ch {
-                // если очередной символ 'h', то начинаем парсить url
+                // если очередной символ это 'h', то начинаем парсить url
                 'h' => {
                     self.parse_url(&chars);
                 }
@@ -49,7 +51,7 @@ impl Lexer {
     }
     fn parse_url(&mut self, chars: &[char]) {
         // объявление enum и struct внутри тела функции сделано для того, чтобы ограничить область видимости,
-        // т.е. компилятор создаст тип один раз во время компиляции
+        // компилятор создаст тип один раз во время компиляции
         #[derive(Debug, Clone, Copy, PartialEq)]
         enum UrlState {
             Start,
@@ -62,6 +64,7 @@ impl Lexer {
             ColonSlash,
             Done,
         }
+        // запоминаю начало лексемы
         let start = self.idx;
         // начальное состояние
         let mut state = UrlState::Start;
@@ -84,15 +87,16 @@ impl Lexer {
                 // здесь происходит проверка символа на пробельный,
                 // если так, то останавливаем считывание
                 (UrlState::Done, c) if c.is_ascii_whitespace() => break,
-                // нижнее подчеркивание означает любой
+                // нижнее подчеркивание означает любой символ
                 (UrlState::Done, _) => UrlState::Done,
-                // все не подходящее под шаблон уходит в ловушку
+                // все не подходящее под шаблон уходит в "ловушку"
                 _ => return,
             };
             self.idx += 1;
         }
         // собираем строку из символов с индекса start по индекс self.idx не включая
         let url_lexem = chars[start..self.idx].iter().collect();
+        // добавляем в распознанные лексемы
         self.parsed_lexems.push(Lexem::Url(url_lexem));
     }
 
