@@ -1,112 +1,157 @@
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Lexem {
-    Url(String),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LexemKind {
+    Word(String),
+    LParen,
+    RParen,
+    Semicolon,
+    Comma,
+    Colon,
+    Minus,
+    Declare,
+    Conclusion,
+    Eof,
 }
-// объявления структуры Lexer
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lexem {
+    pub kind: LexemKind,
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LexError {
+    pub message: String,
+    pub line: usize,
+    pub column: usize,
+}
+
+impl std::fmt::Display for LexError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} at {}:{}", self.message, self.line, self.column)
+    }
+}
+
+impl std::error::Error for LexError {}
+
+
 pub struct Lexer {
-    // текущий индекс считываемого символа
     idx: usize,
-    // список распознанных лексем
-    parsed_lexems: Vec<Lexem>,
+    line: usize,
+    column: usize,
+    chars: Vec<char>,
 }
 
 impl Lexer {
-    // инициализация (конструктор)
     pub fn new() -> Lexer {
         Lexer {
             idx: 0,
-            parsed_lexems: vec![],
+            line: 1,
+            column: 1,
+            chars: vec![],
         }
     }
-    pub fn lex(&mut self, contents: &str) {
-        // считываем из строки все символы в массив символов
-        let chars: Vec<char> = contents.chars().collect();
+    pub fn lex(&mut self, contents: &str) -> Result<Vec<Lexem>, LexError> {
+        self.idx = 0;
+        self.line = 1;
+        self.column = 1;
+        self.chars = contents.chars().collect();
 
-        while self.idx < chars.len() {
-            let mut ch = chars[self.idx];
+        let mut parsed_lexems = Vec::new();
 
-            // пропуск пробельных символов
-            while ch.is_ascii_whitespace() {
-                self.idx += 1;
-                if self.idx >= chars.len() {
-                    return;
-                }
-                ch = chars[self.idx];
+        while let Some(ch) = self.current_char() {
+            if ch.is_ascii_whitespace() {
+                self.advance();
+                continue;
             }
 
             match ch {
-                // если очередной символ это 'h', то начинаем парсить url
-                'h' => {
-                    self.parse_url(&chars);
+                '(' => {
+                    parsed_lexems.push(self.make_lexem(LexemKind::LParen));
+                    self.advance();
                 }
-                // иначе пропускаем символ
+                ')' => {
+                    parsed_lexems.push(self.make_lexem(LexemKind::RParen));
+                    self.advance();
+                }
+                ';' => {
+                    parsed_lexems.push(self.make_lexem(LexemKind::Semicolon));
+                    self.advance();
+                }
+                ',' => {
+                    parsed_lexems.push(self.make_lexem(LexemKind::Comma));
+                    self.advance();
+                }
+                ':' => {
+                    parsed_lexems.push(self.make_lexem(LexemKind::Colon));
+                    self.advance();
+                }
+                '-' => {
+                    parsed_lexems.push(self.make_lexem(LexemKind::Minus));
+                    self.advance();
+                }
+                c if c.is_ascii_alphabetic() => {
+                    let line = self.line;
+                    let column = self.column;
+                    let mut word = String::new();
+                    while let Some(c2) = self.current_char() {
+                        if c2.is_ascii_alphabetic() {
+                            word.push(c2);
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    let kind = match word.as_str() {
+                        "declare" => LexemKind::Declare,
+                        "conclusion" => LexemKind::Conclusion,
+                        _ => LexemKind::Word(word),
+                    };
+                    parsed_lexems.push(Lexem { kind, line, column });
+                }
                 _ => {
-                    self.idx += 1;
+                    return Err(LexError {
+                        message: format!("Unexpected character '{}'", ch),
+                        line: self.line,
+                        column: self.column,
+                    });
                 }
             }
         }
-    }
-    fn parse_url(&mut self, chars: &[char]) {
-        // объявление enum и struct внутри тела функции сделано для того, чтобы ограничить область видимости,
-        // компилятор создаст тип один раз во время компиляции
-        #[derive(Debug, Clone, Copy, PartialEq)]
-        enum UrlState {
-            Start,
-            H,
-            HT,
-            HTT,
-            HTTP,
-            HTTPS,
-            Colon,
-            ColonSlash,
-            Done,
-        }
-        // запоминаю начало лексемы
-        let start = self.idx;
-        // начальное состояние
-        let mut state = UrlState::Start;
-        while self.idx < chars.len() {
-            let ch = chars[self.idx];
-            // переходы автомата:
-            // сравниваем состояние и текущий символ, а потом присваиваем в текущее состояние
-            state = match (state, ch) {
-                // шаблон сопоставления:
-                // (состояние, символ) => новое состояние
-                (UrlState::Start, 'h') => UrlState::H,
-                (UrlState::H, 't') => UrlState::HT,
-                (UrlState::HT, 't') => UrlState::HTT,
-                (UrlState::HTT, 'p') => UrlState::HTTP,
-                (UrlState::HTTP, 's') => UrlState::HTTPS,
-                (UrlState::HTTP, ':') => UrlState::Colon,
-                (UrlState::HTTPS, ':') => UrlState::Colon,
-                (UrlState::Colon, '/') => UrlState::ColonSlash,
-                (UrlState::ColonSlash, '/') => UrlState::Done,
-                // здесь происходит проверка символа на пробельный,
-                // если так, то останавливаем считывание
-                (UrlState::Done, c) if c.is_ascii_whitespace() => break,
-                // нижнее подчеркивание означает любой символ
-                (UrlState::Done, _) => UrlState::Done,
-                // все не подходящее под шаблон уходит в "ловушку"
-                _ => return,
-            };
-            self.idx += 1;
-        }
-        // собираем строку из символов с индекса start по индекс self.idx не включая
-        let url_lexem = chars[start..self.idx].iter().collect();
-        // добавляем в распознанные лексемы
-        self.parsed_lexems.push(Lexem::Url(url_lexem));
+
+        parsed_lexems.push(Lexem {
+            kind: LexemKind::Eof,
+            line: self.line,
+            column: self.column,
+        });
+
+        Ok(parsed_lexems)
     }
 
-    pub fn print_lexems(&self) {
-        for lexem in &self.parsed_lexems {
-            match lexem {
-                Lexem::Url(url) => {
-                    println!("Url: {:?}", url);
-                }
+    fn current_char(&self) -> Option<char> {
+        self.chars.get(self.idx).copied()
+    }
+
+    fn advance(&mut self) {
+        if let Some(ch) = self.current_char() {
+            self.idx += 1;
+            if ch == '\n' {
+                self.line += 1;
+                self.column = 1;
+            } else {
+                self.column += 1;
             }
+        }
+    }
+
+    fn make_lexem(&self, kind: LexemKind) -> Lexem {
+        Lexem {
+            kind,
+            line: self.line,
+            column: self.column,
         }
     }
 }

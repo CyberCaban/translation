@@ -1,0 +1,5 @@
+declare          Q      (      Name     )   
+declare A(Alpha); declare B(Beta)
+conclusion Q(x): -B(y)
+conclusion A(x,y,Id):-Q(z),B(Name),A(Arg)
+declare Q(Main); conclusion B(x,Id):-A(y),Q(z)

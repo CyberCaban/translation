@@ -1,70 +1,40 @@
-use core::panic;
-
 use crate::lexer::*;
 
-fn process(input: &str) -> Vec<Lexem> {
+fn lex(input: &str) -> Vec<Lexem> {
     let mut lexer = Lexer::new();
-    lexer.lex(input);
-    lexer.parsed_lexems
+    lexer.lex(input).expect("lexing failed")
 }
 
 #[test]
-fn test_simple() {
-    let input = "https://example.com";
-    let lexems = process(input);
-    match &lexems[0] {
-        Lexem::Url(url) => assert_eq!(url, input),
-        _ => panic!("Expected url lexem"),
-    }
+fn test_lex_with_spaces() {
+    let input = "declare   Q   (   Name   )";
+    let lexems = lex(input);
+    assert_eq!(
+        lexems.into_iter().map(|l| l.kind).collect::<Vec<_>>(),
+        vec![
+            LexemKind::Declare,
+            LexemKind::Word("Q".to_string()),
+            LexemKind::LParen,
+            LexemKind::Word("Name".to_string()),
+            LexemKind::RParen,
+            LexemKind::Eof,
+        ]
+    );
 }
 
 #[test]
-fn test_empty() {
-    let input = "";
-    let lexems = process(input);
-    assert_eq!(lexems.first(), None::<&Lexem>);
+fn test_lex_conclusion_operator_tokens() {
+    let input = "conclusion Q(x):-B(y)";
+    let mut lexer = Lexer::new();
+    let lexems = lexer.lex(input).expect("lexing failed");
+    assert!(lexems.iter().any(|l| l.kind == LexemKind::Colon));
+    assert!(lexems.iter().any(|l| l.kind == LexemKind::Minus));
 }
 
 #[test]
-fn test_url_long() {
-    let input = "https://example.com/files/download.zip";
-    let lexems = process(input);
-    match &lexems[0] {
-        Lexem::Url(url) => assert_eq!(url, input),
-        _ => panic!("Expected URL lexem"),
-    }
-}
-
-#[test]
-fn test_url_whitespaces() {
-    let input = "\t \n\t\nhttps://example.com\t\n\t\n \t";
-    let lexems = process(input);
-    match &lexems[0] {
-        Lexem::Url(url) => assert_eq!(url, "https://example.com"),
-        _ => panic!("Expected URL lexem"),
-    }
-}
-
-#[test]
-fn test_multiple_urls() {
-    let input = " fdosn   fef   s    https://site1.com   
-        an     d http://site2.org a   n  dhtpp http:/ http://www.site3.net";
-    let lexems = process(input);
-
-    assert_eq!(lexems.len(), 3);
-
-    match &lexems[0] {
-        Lexem::Url(url) => assert_eq!(url, "https://site1.com"),
-        _ => panic!("Expected URL lexem"),
-    }
-
-    match &lexems[1] {
-        Lexem::Url(url) => assert_eq!(url, "http://site2.org"),
-        _ => panic!("Expected URL lexem"),
-    }
-
-    match &lexems[2] {
-        Lexem::Url(url) => assert_eq!(url, "http://www.site3.net"),
-        _ => panic!("Expected URL lexem"),
-    }
+fn test_lex_error_unknown_char() {
+    let input = "declare Q(Name) #";
+    let mut lexer = Lexer::new();
+    let error = lexer.lex(input).expect_err("expected lex error");
+    assert!(error.message.contains("Unexpected character"));
 }
