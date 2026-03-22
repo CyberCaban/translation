@@ -50,17 +50,14 @@ impl Parser {
         Self { tokens, idx: 0 }
     }
 
+    // начало парсинга
+    // S -> D ( ';' D )* EOF
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
         let mut declarations = Vec::new();
         declarations.push(self.parse_declaration()?);
 
         loop {
             if self.match_kind(&LexemKind::Semicolon) {
-                declarations.push(self.parse_declaration()?);
-                continue;
-            }
-
-            if self.can_insert_semicolon_implicitly() {
                 declarations.push(self.parse_declaration()?);
                 continue;
             }
@@ -80,7 +77,10 @@ impl Parser {
         Ok(Program { declarations })
     }
 
+    // Декларация может быть либо объявлением, либо заключением
+    // D -> 'declare' F '(' Identifier ')' | 'conclusion' K ':' '-' K (',' K)*
     fn parse_declaration(&mut self) -> Result<Declaration, ParseError> {
+        // 'declare' ветка
         if self.match_kind(&LexemKind::Declare) {
             let func = self.parse_func()?;
             self.expect_kind(&LexemKind::LParen, "Expected '(' after function")?;
@@ -89,6 +89,7 @@ impl Parser {
             return Ok(Declaration::Declare { func, identifier });
         }
 
+        // 'conclusion' ветка
         if self.match_kind(&LexemKind::Conclusion) {
             let left = self.parse_call()?;
             self.expect_kind(&LexemKind::Colon, "Expected ':' after left expression")?;
@@ -109,6 +110,8 @@ impl Parser {
         })
     }
 
+    // Парсинг вызова функции
+    // K -> F '(' V (',' V)* ')'
     fn parse_call(&mut self) -> Result<Call, ParseError> {
         let func = self.parse_func()?;
         self.expect_kind(&LexemKind::LParen, "Expected '(' after function")?;
@@ -124,6 +127,8 @@ impl Parser {
         Ok(Call { func, args })
     }
 
+    // Парсинг значения (идентификатора или переменной)
+    // V -> x | y | z | Identifier
     fn parse_value(&mut self) -> Result<Value, ParseError> {
         let word = self.parse_identifier()?;
         if word == "x" || word == "y" || word == "z" {
@@ -133,9 +138,12 @@ impl Parser {
         }
     }
 
+    // Парсинг имени функции (Q, B или A)
+    // F -> 'Q' | 'B' | 'A'
     fn parse_func(&mut self) -> Result<String, ParseError> {
         let token = self.current().clone();
         match &token.kind {
+            // Тип токена должен быть Word, а его значение должно быть Q, B или A
             LexemKind::Word(w) if w == "Q" || w == "B" || w == "A" => {
                 self.idx += 1;
                 Ok(w.clone())
@@ -148,6 +156,8 @@ impl Parser {
         }
     }
 
+    // Парсинг идентификатора (любое слово, не являющееся ключевым)
+    // Identifier -> Word (кроме declare, conclusion, Q, B, A)
     fn parse_identifier(&mut self) -> Result<String, ParseError> {
         let token = self.current().clone();
         match token.kind {
@@ -163,6 +173,7 @@ impl Parser {
         }
     }
 
+    // Вспомогательная функция для проверки ожидаемого токена
     fn expect_kind(&mut self, expected: &LexemKind, message: &str) -> Result<(), ParseError> {
         if self.match_kind(expected) {
             Ok(())
@@ -176,8 +187,9 @@ impl Parser {
         }
     }
 
+    // Вспомогательная функция для проверки и потребления ожидаемого токена
     fn match_kind(&mut self, expected: &LexemKind) -> bool {
-        if self.same_kind(&self.current().kind, expected) {
+        if self.current().kind == *expected {
             self.idx += 1;
             true
         } else {
@@ -185,31 +197,14 @@ impl Parser {
         }
     }
 
-    fn same_kind(&self, actual: &LexemKind, expected: &LexemKind) -> bool {
-        match (actual, expected) {
-            (LexemKind::Word(a), LexemKind::Word(b)) if a == b => true,
-            (token_a, token_b) if token_a == token_b => true,
-            _ => false,
-        }
-    }
-
+    // Получение текущего токена
     fn current(&self) -> &Lexem {
+        // Защита от выхода за пределы массива токенов
+        // saturating_sub(1) гарантирует, что индекс не будет меньше 0, а min гарантирует, что индекс не будет больше len - 1
         &self.tokens[self.idx.min(self.tokens.len().saturating_sub(1))]
     }
 
     fn is_eof(&self) -> bool {
-        matches!(self.current().kind, LexemKind::Eof)
-    }
-
-    fn can_insert_semicolon_implicitly(&self) -> bool {
-        if self.idx == 0 {
-            return false;
-        }
-
-        let current = self.current();
-        let previous = &self.tokens[self.idx - 1];
-
-        matches!(current.kind, LexemKind::Declare | LexemKind::Conclusion)
-            && current.line > previous.line
+        self.current().kind == LexemKind::Eof
     }
 }

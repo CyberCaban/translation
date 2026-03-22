@@ -1,6 +1,6 @@
 declare Q()
 declare R(Name)
 conclusion Q(x):B(y)
-conclusion Q(x):=B()
+conclusion Q(x):-B()
 hello Q(Name)
-declare Q(Name)); conclusion A(x):=B(y)
+declare Q(Name)); conclusion A(x):-B(y)

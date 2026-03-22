@@ -1,4 +1,4 @@
-use crate::{lexer::{LexemKind, Lexer}, parser::Parser};
+use crate::{lexer::Lexer, parser::Parser};
 use anyhow::{Context, Result};
 use std::{env::args, fs::read_to_string};
 
@@ -22,14 +22,6 @@ fn main() -> Result<()> {
             return Ok(());
         }
     };
-
-    println!("Lexems:");
-    for token in &tokens {
-        if matches!(token.kind, LexemKind::Eof) {
-            continue;
-        }
-        println!("{:?} at {}:{}", token.kind, token.line, token.column);
-    }
 
     let mut parser = Parser::new(tokens);
     match parser.parse_program() {
