@@ -2,6 +2,13 @@
 mod tests;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AType {
+    Int,
+    Float,
+    UserDefined(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum LexemKind {
     Word(String),
     LParen,
@@ -9,13 +16,33 @@ pub enum LexemKind {
     Semicolon,
     Comma,
     Colon,
+    Type(AType),
+    // Statement operators
+    Assignment,
+    If,
+    Then,
+    Print,
+    Begin,
+    End,
+    // Comparison operators
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    // Math operators
+    Plus,
     Minus,
-    Declare,
-    Conclusion,
+    Multiply,
+    Divide,
+    // Numbers
+    IntLiteral(i128),
+    FloatLiteral(f64),
     Eof,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Lexem {
     pub kind: LexemKind,
     pub line: usize,
@@ -36,7 +63,6 @@ impl std::fmt::Display for LexError {
 }
 
 impl std::error::Error for LexError {}
-
 
 pub struct Lexer {
     idx: usize,
@@ -93,12 +119,27 @@ impl Lexer {
                     parsed_lexems.push(self.make_lexem(LexemKind::Minus));
                     self.advance();
                 }
-                c if c.is_ascii_alphabetic() => {
+                '+' => {
+                    parsed_lexems.push(self.make_lexem(LexemKind::Plus));
+                    self.advance();
+                }
+                '*' => {
+                    parsed_lexems.push(self.make_lexem(LexemKind::Multiply));
+                    self.advance();
+                }
+                '/' => {
+                    parsed_lexems.push(self.make_lexem(LexemKind::Divide));
+                    self.advance();
+                }
+                _ => {
                     let line = self.line;
                     let column = self.column;
                     let mut word = String::new();
                     while let Some(c2) = self.current_char() {
-                        if c2.is_ascii_alphabetic() {
+                        if c2.is_ascii_alphabetic()
+                            || matches!(c2, '=' | '!' | '<' | '>' | '.' | '_')
+                            || c2.is_ascii_digit()
+                        {
                             word.push(c2);
                             self.advance();
                         } else {
@@ -106,8 +147,26 @@ impl Lexer {
                         }
                     }
                     let kind = match word.as_str() {
-                        "declare" => LexemKind::Declare,
-                        "conclusion" => LexemKind::Conclusion,
+                        "=" => LexemKind::Assignment,
+                        "==" => LexemKind::Equal,
+                        "!=" => LexemKind::NotEqual,
+                        "<" => LexemKind::Less,
+                        "<=" => LexemKind::LessEqual,
+                        ">" => LexemKind::Greater,
+                        ">=" => LexemKind::GreaterEqual,
+                        "int" => LexemKind::Type(AType::Int),
+                        "float" => LexemKind::Type(AType::Float),
+                        "if" => LexemKind::If,
+                        "then" => LexemKind::Then,
+                        "print" => LexemKind::Print,
+                        "begin" => LexemKind::Begin,
+                        "end" => LexemKind::End,
+                        num if num.parse::<i128>().is_ok() => {
+                            LexemKind::IntLiteral(num.parse().unwrap())
+                        }
+                        num if num.parse::<f64>().is_ok() => {
+                            LexemKind::FloatLiteral(num.parse().unwrap())
+                        }
                         _ => LexemKind::Word(word),
                     };
                     parsed_lexems.push(Lexem { kind, line, column });

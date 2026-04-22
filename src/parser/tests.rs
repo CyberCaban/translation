@@ -1,206 +1,131 @@
 use crate::lexer::Lexer;
-use crate::parser::{Declaration, Parser, Value};
 
-#[test]
-fn test_parse_valid_program() {
-	let input = "declare A(Alpha); conclusion Q(x,y,Id):-B(z),A(Name)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let program = parser.parse_program().expect("parsing failed");
-	assert_eq!(program.declarations.len(), 2);
+use super::*;
+
+fn parse_program(input: &str) -> Program {
+    let mut lexer = Lexer::new();
+    let tokens = lexer.lex(input).expect("lexing failed");
+    let mut parser = Parser::new(tokens);
+    parser.parse_program().expect("parsing failed")
 }
 
 #[test]
-fn test_parse_valid_multiple_semicolon() {
-	let input = "declare Q(Aa);declare B(Bb);conclusion A(x):-Q(y),B(z)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let program = parser.parse_program().expect("parsing failed");
-	assert_eq!(program.declarations.len(), 3);
+fn parses_program_with_single_declaration_and_print() {
+    let program = parse_program("int x begin print x end");
+
+    assert_eq!(
+        program,
+        Program {
+            vars_decls: vec![VarsDecl::Var {
+                ttype: AType::Int,
+                name: "x".to_string(),
+            }],
+            body: vec![Statement::Print {
+                value: Expr::Term(Term::Factor(Factor::Variable("x".to_string()))),
+            }],
+        }
+    );
 }
 
 #[test]
-fn test_parse_error_multiple_newline_without_semicolon() {
-	let input = "declare Q(Aa)\ndeclare B(Bb)\nconclusion A(x):-Q(y),B(z)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error
-		.message
-		.contains("Unexpected token after end of program"));
+fn parses_program_with_multiple_declarations() {
+    let program = parse_program("int x; float y begin print x end");
+
+    assert_eq!(
+        program.vars_decls,
+        vec![
+            VarsDecl::Var {
+                ttype: AType::Int,
+                name: "x".to_string(),
+            },
+            VarsDecl::Var {
+                ttype: AType::Float,
+                name: "y".to_string(),
+            },
+        ]
+    );
 }
 
 #[test]
-fn test_parse_error_missing_minus() {
-	let input = "conclusion Q(x): B(y)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected '-' after ':'"));
+fn parses_assignment_with_operator_precedence() {
+    let program = parse_program("int x begin x = 1 + 2 * 3 end");
+
+    assert_eq!(
+        program.body,
+        vec![Statement::Assignment {
+            var: "x".to_string(),
+            value: Expr::Plus {
+                left: Box::new(Expr::Term(Term::Factor(Factor::IntLiteral(1)))),
+                term: Term::Multiply {
+                    left: Box::new(Term::Factor(Factor::IntLiteral(2))),
+                    factor: Factor::IntLiteral(3),
+                },
+            },
+        }]
+    );
 }
 
 #[test]
-fn test_parse_error_missing_rparen() {
-	let input = "declare Q(Name";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected ')' after identifier"));
+fn parses_parenthesized_expression_in_print() {
+    let program = parse_program("int x begin print (1 + 2) end");
+
+    assert_eq!(
+        program.body,
+        vec![Statement::Print {
+            value: Expr::Term(Term::Factor(Factor::Paren(Box::new(Expr::Plus {
+                left: Box::new(Expr::Term(Term::Factor(Factor::IntLiteral(1)))),
+                term: Term::Factor(Factor::IntLiteral(2)),
+            })))),
+        }]
+    );
 }
 
 #[test]
-fn test_parse_error_unknown_start() {
-	let input = "hello Q(Name)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected 'declare' or 'conclusion'"));
+fn parses_if_with_comparison_and_nested_body() {
+    let program = parse_program("int x begin if x < 10 then begin print x end end");
+
+    assert_eq!(
+        program.body,
+        vec![Statement::If {
+            condition: Comparison::Less(
+                Expr::Term(Term::Factor(Factor::Variable("x".to_string()))),
+                Expr::Term(Term::Factor(Factor::IntLiteral(10))),
+            ),
+            then_branch: vec![Statement::Print {
+                value: Expr::Term(Term::Factor(Factor::Variable("x".to_string()))),
+            }],
+        }]
+    );
 }
 
 #[test]
-fn test_parse_valid_declare_ast_shape() {
-	let input = "declare Q(IdentifierOnly)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let program = parser.parse_program().expect("parsing failed");
+fn parses_float_literal_in_print() {
+    let program = parse_program("float y begin print 3.14 end");
 
-	assert_eq!(program.declarations.len(), 1);
-	match &program.declarations[0] {
-		Declaration::Declare { func, identifier } => {
-			assert_eq!(func, "Q");
-			assert_eq!(identifier, "IdentifierOnly");
-		}
-		_ => panic!("expected declare declaration"),
-	}
+    assert_eq!(
+        program.body,
+        vec![Statement::Print {
+            value: Expr::Term(Term::Factor(Factor::FloatLiteral(3.14))),
+        }]
+    );
 }
 
 #[test]
-fn test_parse_valid_conclusion_with_three_calls() {
-	let input = "conclusion A(x,y,Name):-Q(z),B(Id),A(AlphaBeta)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let program = parser.parse_program().expect("parsing failed");
+fn rejects_program_without_begin() {
+    let mut lexer = Lexer::new();
+    let tokens = lexer.lex("int x print x end").expect("lexing failed");
+    let mut parser = Parser::new(tokens);
 
-	assert_eq!(program.declarations.len(), 1);
-	match &program.declarations[0] {
-		Declaration::Conclusion { left, right } => {
-			assert_eq!(left.func, "A");
-			assert_eq!(left.args.len(), 3);
-			assert_eq!(left.args[0], Value::Variable('x'));
-			assert_eq!(left.args[1], Value::Variable('y'));
-			assert_eq!(left.args[2], Value::Identifier("Name".to_string()));
-
-			assert_eq!(right.len(), 3);
-			assert_eq!(right[0].func, "Q");
-			assert_eq!(right[1].func, "B");
-			assert_eq!(right[2].func, "A");
-		}
-		_ => panic!("expected conclusion declaration"),
-	}
+    let error = parser.parse_program().expect_err("expected parse error");
+    assert_eq!(error.message, "No begin keyword");
 }
 
 #[test]
-fn test_parse_valid_single_letter_identifier_not_variable() {
-	let input = "conclusion Q(a):-B(b),A(c)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let program = parser.parse_program().expect("parsing failed");
+fn rejects_statement_without_expression() {
+    let mut lexer = Lexer::new();
+    let tokens = lexer.lex("int x begin print end").expect("lexing failed");
+    let mut parser = Parser::new(tokens);
 
-	match &program.declarations[0] {
-		Declaration::Conclusion { left, right } => {
-			assert_eq!(left.args[0], Value::Identifier("a".to_string()));
-			assert_eq!(right[0].args[0], Value::Identifier("b".to_string()));
-			assert_eq!(right[1].args[0], Value::Identifier("c".to_string()));
-		}
-		_ => panic!("expected conclusion declaration"),
-	}
-}
-
-#[test]
-fn test_parse_error_unknown_function_in_declare() {
-	let input = "declare C(Name)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected function name: Q, B or A"));
-}
-
-#[test]
-fn test_parse_error_unknown_function_in_conclusion_right_side() {
-	let input = "conclusion Q(x):-C(y)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected function name: Q, B or A"));
-}
-
-#[test]
-fn test_parse_error_missing_call_after_minus() {
-	let input = "conclusion Q(x):-";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected function name: Q, B or A"));
-}
-
-#[test]
-fn test_parse_error_trailing_comma_in_arguments() {
-	let input = "conclusion Q(x,):-B(y)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected identifier"));
-}
-
-#[test]
-fn test_parse_error_trailing_comma_in_right_calls() {
-	let input = "conclusion Q(x):-B(y),";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected function name: Q, B or A"));
-}
-
-#[test]
-fn test_parse_error_trailing_semicolon() {
-	let input = "declare Q(Name);";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected 'declare' or 'conclusion'"));
-}
-
-#[test]
-fn test_parse_error_unexpected_tokens_after_program() {
-	let input = "declare Q(Name) declare B(Other)";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Unexpected token after end of program"));
-}
-
-#[test]
-fn test_parse_error_empty_input() {
-	let input = "";
-	let mut lexer = Lexer::new();
-	let tokens = lexer.lex(input).expect("lexing failed");
-	let mut parser = Parser::new(tokens);
-	let error = parser.parse_program().expect_err("expected parse error");
-	assert!(error.message.contains("Expected 'declare' or 'conclusion'"));
+    let error = parser.parse_program().expect_err("expected parse error");
+    assert_eq!(error.message, "Expected factor");
 }
