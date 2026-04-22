@@ -1,80 +1,16 @@
 #[cfg(test)]
 mod tests;
 
-use crate::lexer::{AType, Lexem, LexemKind};
+mod error;
+mod program;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParseError {
-    pub message: String,
-    pub line: usize,
-    pub column: usize,
-}
+pub use error::ParseError;
+pub use program::{Comparison, Expr, Factor, Program, Statement, Term, VarsDecl};
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} at {}:{}", self.message, self.line, self.column)
-    }
-}
-
-impl std::error::Error for ParseError {}
-#[derive(Debug, Clone, PartialEq)]
-pub struct Program {
-    pub vars_decls: Vec<VarsDecl>,
-    pub body: Vec<Statement>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum VarsDecl {
-    Var { ttype: AType, name: String },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Statement {
-    Assignment {
-        var: String,
-        value: Expr,
-    },
-    If {
-        condition: Comparison,
-        then_branch: Vec<Statement>,
-    },
-    Print {
-        value: Expr,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Comparison {
-    Equal(Expr, Expr),
-    NotEqual(Expr, Expr),
-    Less(Expr, Expr),
-    LessEqual(Expr, Expr),
-    Greater(Expr, Expr),
-    GreaterEqual(Expr, Expr),
-    Expression(Expr),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
-    Plus { left: Box<Expr>, term: Term },
-    Minus { left: Box<Expr>, term: Term },
-    Term(Term),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Term {
-    Multiply { left: Box<Term>, factor: Factor },
-    Divide { left: Box<Term>, factor: Factor },
-    Factor(Factor),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Factor {
-    Variable(String),
-    IntLiteral(i128),
-    FloatLiteral(f64),
-    Paren(Box<Expr>),
-}
+use crate::{
+    lexer::{Lexem, LexemKind},
+    parser::program::Var,
+};
 
 pub struct Parser {
     tokens: Vec<Lexem>,
@@ -86,10 +22,7 @@ impl Parser {
         Self { tokens, idx: 0 }
     }
 
-    // начало парсинга
-    // Program -> VarsDecls Body
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
-        // VarsDecls branch
         let mut declarations = Vec::new();
         declarations.push(self.parse_declaration()?);
 
@@ -102,16 +35,15 @@ impl Parser {
             break;
         }
 
-        // Body branch
         let body = self.parse_body()?;
 
         if !self.is_eof() {
             let token = self.current();
-            return Err(ParseError {
-                message: "Unexpected token after end of program".to_string(),
-                line: token.line,
-                column: token.column,
-            });
+            return Err(ParseError::new(
+                "unexpected token after end of program",
+                token.line,
+                token.column,
+            ));
         }
 
         Ok(Program {
@@ -120,133 +52,185 @@ impl Parser {
         })
     }
 
-    // Декларация может быть либо объявлением, либо заключением
-    // VarsDecls -> {VarsDecl ';'}
-    // VarsDecl -> Type Identifier {, Identifier}
     fn parse_declaration(&mut self) -> Result<VarsDecl, ParseError> {
-        let kind = self.current_kind().clone();
-        if let LexemKind::Type(atype) = kind {
+        let token = self.current().clone();
+        if let LexemKind::Type(atype) = token.kind {
             self.idx += 1;
-            let identifier = self.parse_identifier()?;
-            return Ok(VarsDecl::Var {
-                ttype: atype,
-                name: identifier,
-            });
+            let mut idents = vec![Var::new(
+                atype.clone(),
+                self.parse_identifier()?,
+                token.line,
+                token.column,
+            )];
+            loop {
+                if self.match_kind(&LexemKind::Comma) {
+                    idents.push(Var::new(
+                        atype.clone(),
+                        self.parse_identifier()?,
+                        token.line,
+                        token.column,
+                    ));
+                } else {
+                    break;
+                }
+            }
+            return Ok(VarsDecl::new(idents));
         }
 
-        let token = self.current();
-        Err(ParseError {
-            message: "Expected variable declaration".to_string(),
-            line: token.line,
-            column: token.column,
-        })
+        Err(ParseError::new(
+            "expected variable declaration",
+            token.line,
+            token.column,
+        ))
     }
 
     fn parse_body(&mut self) -> Result<Vec<Statement>, ParseError> {
-        self.expect_kind(&LexemKind::Begin, "No begin keyword")?;
+        self.expect_kind(&LexemKind::Begin, "missing `begin`")?;
         let mut statements = Vec::new();
 
         while !self.is_eof() {
             statements.push(self.parse_statement()?);
-            if !self.match_kind(&LexemKind::Semicolon) {
+            self.expect_kind(&LexemKind::Semicolon, "missing semicolon")?;
+            if self.current().kind == LexemKind::End {
                 break;
             }
         }
-        self.expect_kind(&LexemKind::End, "No end keyword")?;
-
+        
+        self.expect_kind(&LexemKind::End, "missing `end`")?;
         Ok(statements)
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
-        let kind = self.current_kind().clone();
-        match kind {
-            LexemKind::Word(_) => self.parse_assignment(),
-            LexemKind::If => self.parse_if(),
-            LexemKind::Print => self.parse_print(),
-            _ => {
-                let token = self.current();
-                Err(ParseError {
-                    message: "Expected statement".to_string(),
-                    line: token.line,
-                    column: token.column,
-                })
-            }
+        let token = self.current().clone();
+        match token.kind {
+            LexemKind::Word(_) => self.parse_assignment(token.line, token.column),
+            LexemKind::If => self.parse_if(token.line, token.column),
+            LexemKind::Print => self.parse_print(token.line, token.column),
+            _ => Err(ParseError::new(
+                "expected statement",
+                token.line,
+                token.column,
+            )),
         }
     }
 
-    fn parse_assignment(&mut self) -> Result<Statement, ParseError> {
+    fn parse_assignment(&mut self, line: usize, column: usize) -> Result<Statement, ParseError> {
         let var = self.parse_identifier()?;
-        self.expect_kind(&LexemKind::Assignment, "Expected assignment operator")?;
+        self.expect_kind(&LexemKind::Assignment, "expected assignment operator")?;
         let value = self.parse_expr()?;
-        Ok(Statement::Assignment { var, value })
+        Ok(Statement::Assignment {
+            var,
+            value,
+            line,
+            column,
+        })
     }
 
-    fn parse_if(&mut self) -> Result<Statement, ParseError> {
-        self.expect_kind(&LexemKind::If, "Expected if keyword")?;
+    fn parse_if(&mut self, line: usize, column: usize) -> Result<Statement, ParseError> {
+        self.expect_kind(&LexemKind::If, "expected `if`")?;
         let condition = self.parse_comparison()?;
-        self.expect_kind(&LexemKind::Then, "Expected then keyword")?;
+        self.expect_kind(&LexemKind::Then, "expected `then`")?;
         let then_branch = self.parse_body()?;
         Ok(Statement::If {
             condition,
             then_branch,
+            line,
+            column,
         })
     }
 
-    fn parse_print(&mut self) -> Result<Statement, ParseError> {
-        self.expect_kind(&LexemKind::Print, "Expected print keyword")?;
+    fn parse_print(&mut self, line: usize, column: usize) -> Result<Statement, ParseError> {
+        self.expect_kind(&LexemKind::Print, "expected `print`")?;
         let value = self.parse_expr()?;
-        Ok(Statement::Print { value })
+        Ok(Statement::Print {
+            value,
+            line,
+            column,
+        })
     }
 
     fn parse_comparison(&mut self) -> Result<Comparison, ParseError> {
         let left = self.parse_expr()?;
+        let token = self.current().clone();
 
-        let kind = self.current_kind().clone();
-        let comparison = match kind {
+        match token.kind {
             LexemKind::Equal => {
                 self.idx += 1;
-                Comparison::Equal(left, self.parse_expr()?)
+                Ok(Comparison::Equal {
+                    left,
+                    right: self.parse_expr()?,
+                    line: token.line,
+                    column: token.column,
+                })
             }
             LexemKind::NotEqual => {
                 self.idx += 1;
-                Comparison::NotEqual(left, self.parse_expr()?)
+                Ok(Comparison::NotEqual {
+                    left,
+                    right: self.parse_expr()?,
+                    line: token.line,
+                    column: token.column,
+                })
             }
             LexemKind::Less => {
                 self.idx += 1;
-                Comparison::Less(left, self.parse_expr()?)
+                Ok(Comparison::Less {
+                    left,
+                    right: self.parse_expr()?,
+                    line: token.line,
+                    column: token.column,
+                })
             }
             LexemKind::LessEqual => {
                 self.idx += 1;
-                Comparison::LessEqual(left, self.parse_expr()?)
+                Ok(Comparison::LessEqual {
+                    left,
+                    right: self.parse_expr()?,
+                    line: token.line,
+                    column: token.column,
+                })
             }
             LexemKind::Greater => {
                 self.idx += 1;
-                Comparison::Greater(left, self.parse_expr()?)
+                Ok(Comparison::Greater {
+                    left,
+                    right: self.parse_expr()?,
+                    line: token.line,
+                    column: token.column,
+                })
             }
             LexemKind::GreaterEqual => {
                 self.idx += 1;
-                Comparison::GreaterEqual(left, self.parse_expr()?)
+                Ok(Comparison::GreaterEqual {
+                    left,
+                    right: self.parse_expr()?,
+                    line: token.line,
+                    column: token.column,
+                })
             }
-            _ => return Ok(Comparison::Expression(left)),
-        };
-        Ok(comparison)
+            _ => Ok(Comparison::Expression(left)),
+        }
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
         let mut expr = Expr::Term(self.parse_term()?);
 
         while let LexemKind::Plus | LexemKind::Minus = self.current_kind() {
-            let op = self.current_kind().clone();
+            let token = self.current().clone();
             self.idx += 1;
             let term = self.parse_term()?;
-            expr = match op {
+            expr = match token.kind {
                 LexemKind::Plus => Expr::Plus {
                     left: Box::new(expr),
                     term,
+                    line: token.line,
+                    column: token.column,
                 },
                 LexemKind::Minus => Expr::Minus {
                     left: Box::new(expr),
                     term,
+                    line: token.line,
+                    column: token.column,
                 },
                 _ => unreachable!(),
             };
@@ -259,17 +243,21 @@ impl Parser {
         let mut term = Term::Factor(self.parse_factor()?);
 
         while let LexemKind::Multiply | LexemKind::Divide = self.current_kind() {
-            let op = self.current_kind().clone();
+            let token = self.current().clone();
             self.idx += 1;
             let factor = self.parse_factor()?;
-            term = match op {
+            term = match token.kind {
                 LexemKind::Multiply => Term::Multiply {
                     left: Box::new(term),
                     factor,
+                    line: token.line,
+                    column: token.column,
                 },
                 LexemKind::Divide => Term::Divide {
                     left: Box::new(term),
                     factor,
+                    line: token.line,
+                    column: token.column,
                 },
                 _ => unreachable!(),
             };
@@ -279,69 +267,86 @@ impl Parser {
     }
 
     fn parse_factor(&mut self) -> Result<Factor, ParseError> {
-        let kind = self.current_kind().clone();
-        match kind {
+        let token = self.current().clone();
+
+        match token.kind {
             LexemKind::Word(_) => {
-                let var = self.parse_identifier()?;
-                Ok(Factor::Variable(var))
-            }
-            LexemKind::IntLiteral(n) => {
-                self.idx += 1;
-                Ok(Factor::IntLiteral(n))
-            }
-            LexemKind::FloatLiteral(f) => {
-                self.idx += 1;
-                Ok(Factor::FloatLiteral(f))
-            }
-            LexemKind::LParen => {
-                self.idx += 1;
-                let expr = self.parse_expr()?;
-                self.expect_kind(&LexemKind::RParen, "Expected closing parenthesis")?;
-                Ok(Factor::Paren(Box::new(expr)))
-            }
-            _ => {
-                let token = self.current();
-                Err(ParseError {
-                    message: "Expected factor".to_string(),
+                let name = self.parse_identifier()?;
+                Ok(Factor::Variable {
+                    name,
                     line: token.line,
                     column: token.column,
                 })
             }
+            LexemKind::IntLiteral(value) => {
+                self.idx += 1;
+                Ok(Factor::IntLiteral {
+                    value,
+                    line: token.line,
+                    column: token.column,
+                })
+            }
+            LexemKind::FloatLiteral(value) => {
+                self.idx += 1;
+                Ok(Factor::FloatLiteral {
+                    value,
+                    line: token.line,
+                    column: token.column,
+                })
+            }
+            LexemKind::LParen => {
+                self.idx += 1;
+                let expr = self.parse_expr()?;
+                self.expect_kind(&LexemKind::RParen, "expected closing parenthesis")?;
+                Ok(Factor::Paren {
+                    expr: Box::new(expr),
+                    line: token.line,
+                    column: token.column,
+                })
+            }
+            LexemKind::Type(ref atype) => {
+                self.idx += 1;
+                self.expect_kind(
+                    &LexemKind::LParen,
+                    "expected opening parenthesis after cast type",
+                )?;
+                let expr = self.parse_expr()?;
+                self.expect_kind(&LexemKind::RParen, "expected closing parenthesis")?;
+                Ok(Factor::Cast {
+                    target: atype.clone(),
+                    expr: Box::new(expr),
+                    line: token.line,
+                    column: token.column,
+                })
+            }
+            _ => Err(ParseError::new("expected factor", token.line, token.column)),
         }
     }
 
-    // Парсинг идентификатора (любое слово, не являющееся ключевым)
-    // Identifier -> Word
     fn parse_identifier(&mut self) -> Result<String, ParseError> {
         let token = self.current().clone();
         match token.kind {
-            LexemKind::Word(w) => {
+            LexemKind::Word(word) => {
                 self.idx += 1;
-                Ok(w)
+                Ok(word)
             }
-            _ => Err(ParseError {
-                message: "Expected identifier".to_string(),
-                line: token.line,
-                column: token.column,
-            }),
+            _ => Err(ParseError::new(
+                "expected identifier",
+                token.line,
+                token.column,
+            )),
         }
     }
 
-    // Вспомогательная функция для проверки ожидаемого токена
     fn expect_kind(&mut self, expected: &LexemKind, message: &str) -> Result<(), ParseError> {
         if self.match_kind(expected) {
             Ok(())
         } else {
             let token = self.current();
-            Err(ParseError {
-                message: message.to_string(),
-                line: token.line,
-                column: token.column,
-            })
+            Err(ParseError::new(message, token.line, token.column))
         }
     }
 
-    // Вспомогательная функция для проверки и потребления ожидаемого токена
     fn match_kind(&mut self, expected: &LexemKind) -> bool {
         if self.current().kind == *expected {
             self.idx += 1;
@@ -351,10 +356,7 @@ impl Parser {
         }
     }
 
-    // Получение текущего токена
     fn current(&self) -> &Lexem {
-        // Защита от выхода за пределы массива токенов
-        // saturating_sub(1) гарантирует, что индекс не будет меньше 0, а min гарантирует, что индекс не будет больше len - 1
         &self.tokens[self.idx.min(self.tokens.len().saturating_sub(1))]
     }
 

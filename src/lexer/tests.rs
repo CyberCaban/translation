@@ -23,23 +23,6 @@ fn test_lex_with_spaces() {
 }
 
 #[test]
-fn test_lex_conclusion_operator_tokens() {
-    let input = "conclusion Q(x):-B(y)";
-    let mut lexer = Lexer::new();
-    let lexems = lexer.lex(input).expect("lexing failed");
-    assert!(lexems.iter().any(|l| l.kind == LexemKind::Colon));
-    assert!(lexems.iter().any(|l| l.kind == LexemKind::Minus));
-}
-
-#[test]
-fn test_lex_error_unknown_char() {
-    let input = "declare Q(Name) #";
-    let mut lexer = Lexer::new();
-    let error = lexer.lex(input).expect_err("expected lex error");
-    assert!(error.message.contains("Unexpected character"));
-}
-
-#[test]
 fn test_lexem_kinds() {
     let input = [
         "=",

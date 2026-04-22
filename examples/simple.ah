@@ -1,0 +1,4 @@
+int x
+begin
+    print x
+end

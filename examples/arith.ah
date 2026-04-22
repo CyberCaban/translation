@@ -1,0 +1,10 @@
+int a;
+float b, c
+begin
+    a = 28197418320749;
+    print a;
+    c = 99.0/32.0;
+    print c;
+    b = 2.3+3.2;
+    print b;
+end
