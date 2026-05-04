@@ -11,7 +11,7 @@ pub struct Interpreter {
     program: Program,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum RuntimeValue {
     Int(i128),
     Float(f64),
@@ -255,5 +255,44 @@ impl Interpreter {
             (RuntimeValue::Float(a), RuntimeValue::Float(b)) => Ok(op(a, b)),
             _ => bail!("type mismatch during comparison"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_variables(input: &str) -> HashMap<String, RuntimeValue> {
+        let interpreter = Interpreter::new(input).expect("interpreter init failed");
+        let mut variables = interpreter.init_variables();
+
+        for stmt in &interpreter.program.body {
+            interpreter
+                .execute_statement(stmt, &mut variables)
+                .expect("execution failed");
+        }
+
+        variables
+    }
+
+    #[test]
+    fn executes_if_then_single_statement() {
+        let vars = run_variables("int x; begin x = 10; if x == 10 then begin x = 20;end; end");
+        assert_eq!(vars.get("x"), Some(&RuntimeValue::Int(20)));
+    }
+
+    #[test]
+    fn executes_if_then_block_statement() {
+        let vars = run_variables(
+            "int x, y; begin x = 10; if x <= 10 then begin y = 1; x = x + y; end; end",
+        );
+        assert_eq!(vars.get("x"), Some(&RuntimeValue::Int(11)));
+        assert_eq!(vars.get("y"), Some(&RuntimeValue::Int(1)));
+    }
+
+    #[test]
+    fn skips_then_branch_when_condition_false() {
+        let vars = run_variables("int x; begin x = 10; if x > 10 then begin x = 99;end; end");
+        assert_eq!(vars.get("x"), Some(&RuntimeValue::Int(10)));
     }
 }
