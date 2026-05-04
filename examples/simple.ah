@@ -1,4 +1,5 @@
-int x
+int x1;
 begin
-    print x
+    x1 = 17 + 10;
+    print x1;
 end

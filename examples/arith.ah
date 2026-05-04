@@ -1,5 +1,5 @@
 int a;
-float b, c
+float b, c;
 begin
     a = 28197418320749;
     print a;

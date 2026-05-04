@@ -24,17 +24,17 @@ impl Parser {
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
         let mut declarations = Vec::new();
-        declarations.push(self.parse_declaration()?);
 
-        loop {
-            if self.match_kind(&LexemKind::Semicolon) {
-                declarations.push(self.parse_declaration()?);
-                continue;
+        // VarsDecls
+        while self.current_kind() != &LexemKind::Begin {
+            declarations.push(self.parse_declaration()?);
+            self.expect_kind(&LexemKind::Semicolon, "missing semicolon")?;
+            if self.current_kind() == &LexemKind::Begin {
+                break;
             }
-
-            break;
         }
 
+        // Body
         let body = self.parse_body()?;
 
         if !self.is_eof() {
@@ -95,7 +95,7 @@ impl Parser {
                 break;
             }
         }
-        
+
         self.expect_kind(&LexemKind::End, "missing `end`")?;
         Ok(statements)
     }
