@@ -90,3 +90,12 @@ fn test_lexem_kinds() {
         ]
     );
 }
+
+#[test]
+fn test_lex_rejects_invalid_character() {
+    let mut lexer = Lexer::new();
+    let err = lexer
+        .lex("int x; begin x = 1 @ 2; end")
+        .expect_err("lexing should fail");
+    assert!(err.message.contains("Unexpected character '@'"));
+}

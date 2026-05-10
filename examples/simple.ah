@@ -1,10 +1,16 @@
 int x1, y;
 begin
+    y = 5;
     x1 = 10;
     if x1 < 10 then
         begin
             print y;
         end;
-    
-    print x1;
+    if x1 == 10 then
+        begin
+            if y != 10 then
+                begin
+                print x1;
+                end;
+        end;
 end

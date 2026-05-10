@@ -1,0 +1,4 @@
+int x, y;
+begin
+    y = x + 1;
+end

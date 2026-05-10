@@ -59,3 +59,12 @@ fn verifies_if_condition_and_branch_types() {
 
     assert!(result.is_ok());
 }
+
+#[test]
+fn detects_uninitialized_variable_usage() {
+    let result = parse_and_verify_program("int x, y; begin y = x + 1; end");
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.message.contains("uninitialized variable `x`"));
+}

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use crate::lexer::AType;
@@ -12,14 +13,18 @@ pub struct Program {
 
 impl Program {
     pub fn verify_invariants(&self) -> Result<(), ParseError> {
-        use std::collections::HashMap;
-
-        let mut variables = HashMap::new();
+        let mut variables: HashMap<String, VarState> = HashMap::new();
 
         for declaration in &self.vars_decls {
             for var in declaration.iter() {
                 if variables
-                    .insert(var.name.clone(), var.ttype.clone())
+                    .insert(
+                        var.name.clone(),
+                        VarState {
+                            ttype: var.ttype.clone(),
+                            initialized: false,
+                        },
+                    )
                     .is_some()
                 {
                     return Err(ParseError::at(
@@ -31,13 +36,13 @@ impl Program {
             }
         }
 
-        self.verify_statements(&self.body, &variables)
+        self.verify_statements(&self.body, &mut variables)
     }
 
     fn verify_statements(
         &self,
         statements: &[Statement],
-        variables: &std::collections::HashMap<String, AType>,
+        variables: &mut HashMap<String, VarState>,
     ) -> Result<(), ParseError> {
         for statement in statements {
             self.verify_statement(statement, variables)?;
@@ -49,7 +54,7 @@ impl Program {
     fn verify_statement(
         &self,
         statement: &Statement,
-        variables: &std::collections::HashMap<String, AType>,
+        variables: &mut HashMap<String, VarState>,
     ) -> Result<(), ParseError> {
         match statement {
             Statement::Assignment {
@@ -60,16 +65,16 @@ impl Program {
             } => {
                 let expected_type = variables.get(var).ok_or_else(|| {
                     ParseError::at(format!("undeclared variable `{}`", var), *line, *column)
-                })?;
+                })?.ttype.clone();
                 let actual = self.infer_expr(value, variables)?;
 
-                self.ensure_same_type(
-                    expected_type,
-                    &actual.ty,
-                    actual.line,
-                    actual.column,
-                    "assignment",
-                )
+                self.ensure_same_type(&expected_type, &actual.ty, actual.line, actual.column, "assignment")?;
+
+                if let Some(symbol) = variables.get_mut(var) {
+                    symbol.initialized = true;
+                }
+
+                Ok(())
             }
             Statement::If {
                 condition,
@@ -77,7 +82,8 @@ impl Program {
                 ..
             } => {
                 self.verify_comparison(condition, variables)?;
-                self.verify_statements(then_branch, variables)
+                let mut branch_variables = variables.clone();
+                self.verify_statements(then_branch, &mut branch_variables)
             }
             Statement::Print { value, .. } => {
                 self.infer_expr(value, variables)?;
@@ -89,7 +95,7 @@ impl Program {
     fn verify_comparison(
         &self,
         comparison: &Comparison,
-        variables: &std::collections::HashMap<String, AType>,
+        variables: &HashMap<String, VarState>,
     ) -> Result<(), ParseError> {
         match comparison {
             Comparison::Equal {
@@ -142,7 +148,7 @@ impl Program {
     fn infer_expr(
         &self,
         expr: &Expr,
-        variables: &std::collections::HashMap<String, AType>,
+        variables: &HashMap<String, VarState>,
     ) -> Result<TypedValue, ParseError> {
         match expr {
             Expr::Plus {
@@ -175,7 +181,7 @@ impl Program {
     fn infer_term(
         &self,
         term: &Term,
-        variables: &std::collections::HashMap<String, AType>,
+        variables: &HashMap<String, VarState>,
     ) -> Result<TypedValue, ParseError> {
         match term {
             Term::Multiply {
@@ -208,16 +214,24 @@ impl Program {
     fn infer_factor(
         &self,
         factor: &Factor,
-        variables: &std::collections::HashMap<String, AType>,
+        variables: &HashMap<String, VarState>,
     ) -> Result<TypedValue, ParseError> {
         match factor {
-            Factor::Variable { name, line, column } => variables
-                .get(name)
-                .cloned()
-                .map(|ty| TypedValue::new(ty, *line, *column))
-                .ok_or_else(|| {
+            Factor::Variable { name, line, column } => {
+                let symbol = variables.get(name).ok_or_else(|| {
                     ParseError::at(format!("undeclared variable `{}`", name), *line, *column)
-                }),
+                })?;
+
+                if !symbol.initialized {
+                    return Err(ParseError::at(
+                        format!("use of uninitialized variable `{}`", name),
+                        *line,
+                        *column,
+                    ));
+                }
+
+                Ok(TypedValue::new(symbol.ttype.clone(), *line, *column))
+            }
             Factor::IntLiteral { line, column, .. } => {
                 Ok(TypedValue::new(AType::Int, *line, *column))
             }
@@ -274,6 +288,12 @@ impl TypedValue {
     fn new(ty: AType, line: usize, column: usize) -> Self {
         Self { ty, line, column }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct VarState {
+    ttype: AType,
+    initialized: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

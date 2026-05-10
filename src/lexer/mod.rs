@@ -94,6 +94,35 @@ impl Lexer {
                 continue;
             }
 
+            let line = self.line;
+            let column = self.column;
+
+            if ch.is_ascii_alphabetic() || ch == '_' {
+                let word = self.consume_while(|c| c.is_ascii_alphanumeric() || c == '_');
+                let kind = match word.as_str() {
+                    "int" => LexemKind::Type(AType::Int),
+                    "float" => LexemKind::Type(AType::Float),
+                    "if" => LexemKind::If,
+                    "then" => LexemKind::Then,
+                    "print" => LexemKind::Print,
+                    "begin" => LexemKind::Begin,
+                    "end" => LexemKind::End,
+                    _ => LexemKind::Word(word),
+                };
+                parsed_lexems.push(Lexem { kind, line, column });
+                continue;
+            }
+
+            if ch.is_ascii_digit() {
+                let number = self.consume_number();
+                let kind = match number.parse::<i128>() {
+                    Ok(value) => LexemKind::IntLiteral(value),
+                    Err(_) => LexemKind::FloatLiteral(number.parse().unwrap()),
+                };
+                parsed_lexems.push(Lexem { kind, line, column });
+                continue;
+            }
+
             match ch {
                 '(' => {
                     parsed_lexems.push(self.make_lexem(LexemKind::LParen));
@@ -131,51 +160,79 @@ impl Lexer {
                     parsed_lexems.push(self.make_lexem(LexemKind::Divide));
                     self.advance();
                 }
-                _ => {
-                    let line = self.line;
-                    let column = self.column;
-                    let mut word = String::new();
-                    while let Some(c2) = self.current_char() {
-                        if c2.is_ascii_alphabetic()
-                            || matches!(c2, '=' | '!' | '<' | '>' | '.' | '_')
-                            || c2.is_ascii_digit()
-                        {
-                            word.push(c2);
-                            self.advance();
-                        } else {
-                            break;
-                        }
+                '=' => {
+                    self.advance();
+                    if self.current_char() == Some('=') {
+                        self.advance();
+                        parsed_lexems.push(Lexem {
+                            kind: LexemKind::Equal,
+                            line,
+                            column,
+                        });
+                    } else {
+                        parsed_lexems.push(Lexem {
+                            kind: LexemKind::Assignment,
+                            line,
+                            column,
+                        });
                     }
-                    let kind = match word.as_str() {
-                        "=" => LexemKind::Assignment,
-                        "==" => LexemKind::Equal,
-                        "!=" => LexemKind::NotEqual,
-                        "<" => LexemKind::Less,
-                        "<=" => LexemKind::LessEqual,
-                        ">" => LexemKind::Greater,
-                        ">=" => LexemKind::GreaterEqual,
-                        "int" => LexemKind::Type(AType::Int),
-                        "float" => LexemKind::Type(AType::Float),
-                        "if" => LexemKind::If,
-                        "then" => LexemKind::Then,
-                        "print" => LexemKind::Print,
-                        "begin" => LexemKind::Begin,
-                        "end" => LexemKind::End,
-                        num if num.parse::<i128>().is_ok() => {
-                            LexemKind::IntLiteral(num.parse().unwrap())
-                        }
-                        num if num.parse::<f64>().is_ok() => {
-                            LexemKind::FloatLiteral(num.parse().unwrap())
-                        }
-                        _ => LexemKind::Word(word),
-                    };
-                    parsed_lexems.push(Lexem { kind, line, column });
+                }
+                '!' => {
+                    self.advance();
+                    if self.current_char() == Some('=') {
+                        self.advance();
+                        parsed_lexems.push(Lexem {
+                            kind: LexemKind::NotEqual,
+                            line,
+                            column,
+                        });
+                    } else {
+                        return Err(LexError {
+                            message: format!("Unexpected character '{}'", '!'),
+                            line,
+                            column,
+                        });
+                    }
+                }
+                '<' => {
+                    self.advance();
+                    if self.current_char() == Some('=') {
+                        self.advance();
+                        parsed_lexems.push(Lexem {
+                            kind: LexemKind::LessEqual,
+                            line,
+                            column,
+                        });
+                    } else {
+                        parsed_lexems.push(Lexem {
+                            kind: LexemKind::Less,
+                            line,
+                            column,
+                        });
+                    }
+                }
+                '>' => {
+                    self.advance();
+                    if self.current_char() == Some('=') {
+                        self.advance();
+                        parsed_lexems.push(Lexem {
+                            kind: LexemKind::GreaterEqual,
+                            line,
+                            column,
+                        });
+                    } else {
+                        parsed_lexems.push(Lexem {
+                            kind: LexemKind::Greater,
+                            line,
+                            column,
+                        });
+                    }
                 }
                 _ => {
                     return Err(LexError {
                         message: format!("Unexpected character '{}'", ch),
-                        line: self.line,
-                        column: self.column,
+                        line,
+                        column,
                     });
                 }
             }
@@ -192,6 +249,36 @@ impl Lexer {
 
     fn current_char(&self) -> Option<char> {
         self.chars.get(self.idx).copied()
+    }
+
+    fn consume_while<F>(&mut self, mut predicate: F) -> String
+    where
+        F: FnMut(char) -> bool,
+    {
+        let mut text = String::new();
+
+        while let Some(ch) = self.current_char() {
+            if predicate(ch) {
+                text.push(ch);
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        text
+    }
+
+    fn consume_number(&mut self) -> String {
+        let mut number = self.consume_while(|ch| ch.is_ascii_digit());
+
+        if self.current_char() == Some('.') {
+            number.push('.');
+            self.advance();
+            number.push_str(&self.consume_while(|ch| ch.is_ascii_digit()));
+        }
+
+        number
     }
 
     fn advance(&mut self) {
